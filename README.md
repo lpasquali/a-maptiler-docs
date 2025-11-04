@@ -30,7 +30,8 @@ sudo apt-get install -y \
 Then setup a python virtual environment and install the required python packages:
 
 ```bash
-cd maptile-docs
+git clone https://github.com/lpasquali/a-maptiler-docs.git
+cd ~/a-maptiler-docs
 python3 -m venv maptile
 source ./maptile/bin/activate
 pip install -r ./requirements.txt
@@ -82,7 +83,7 @@ You need to search pbf files in a site like [https://download.geofabrik.de](http
 Note: not always you will find the section you need for your business application, in that case you can use this method:
 ```bash
 #extract Sidney from Australia
-sudo apt install osmiom-tool
+sudo apt install osmium-tool
 wget https://download.geofabrik.de/australia-oceania/australia-latest.osm.pbf
 osmium extract --strategy complete_ways --bbox 150.260825,-34.1732416,151.343898,-33.3641864 australia-latest.osm.pbf -o sidney.pbf
 osm2pgsql -O flex -S openstreetmap-carto-flex.lua -d gis ../sidney.pbf
@@ -91,18 +92,25 @@ osm2pgsql -O flex -S openstreetmap-carto-flex.lua -d gis ../sidney.pbf
 Example of Andorra:
 
 ```bash
-#experiment covers Principality of Andorra 
+#experiment covers Principality of Andorra
+sudo apt install osmium-tool
 wget https://download.geofabrik.de/europe/andorra-latest.osm.pbf
 
-osm2pgsql -O flex -S openstreetmap-carto-flex.lua -d gis ../andorra-latest.osm.pbf
+osm2pgsql -O flex -S openstreetmap-carto-flex.lua -d gis andorra-latest.osm.pbf
 ```
 
 ### Finalize the mapnik style setup
 
 ```bash
 
+
+
+# create indexes in parallel
+# scripts/indexes.py -0 | xargs -0 -P0 -I{} psql -d gis -c "{}"
+
+psql -d gis -f indexes.sql
+psql -d gis -f functions.sql
 scripts/get-external-data.py
-scripts/indexes.py -0 | xargs -0 -P0 -I{} psql -d gis -c "{}"
 scripts/get-fonts.py
 sudo -u postgres createuser -s _renderd
 sudo -u postgres psql -d gis -c 'GRANT CONNECT ON DATABASE gis TO _renderd;'
@@ -111,7 +119,7 @@ sudo -u postgres psql -d gis -c 'GRANT USAGE ON schema public TO _renderd;'
 sudo mkdir /var/www/osm/
 ```
 
-Generate the mapnik style xml file, before running the command below ensure you changed map startting point (lon,lat,zoom) in `project.mml` if needed:
+Generate the mapnik style xml file in `project.mml`:
 
 ```bash
 
@@ -126,13 +134,10 @@ sudo cp -a fonts symbols patterns style.xml /etc/mapnik-osm-carto-data/
 Even if the solution is thought for a pragmatical access from some microservice which will use these tiles as a background for vectors or rasters eventually coming from business logic, it is useful to have a tool to check the map tiles from a browser.
 
 
-
-
-
-
 create this file under `/var/www/osm/slippymap.html`
 
-```html
+```bash
+cat << EOF | sudo tee /var/www/osm/slippymap.html
 <html>
 <head>
     <title>OSM Local Tiles</title>
@@ -176,7 +181,7 @@ create this file under `/var/www/osm/slippymap.html`
             } );
  
             // This is the layer that uses the locally stored tiles
-            var newLayer = new OpenLayers.Layer.OSM("Local Tiles", "${z}/${x}/${y}.png", {numZoomLevels: 19});
+            var newLayer = new OpenLayers.Layer.OSM("Local Tiles", "\${z}/\${x}/\${y}.png", {numZoomLevels: 19});
             map.addLayer(newLayer);
 
             layerMapnik = new OpenLayers.Layer.OSM.Mapnik("Mapnik");
@@ -206,55 +211,53 @@ create this file under `/var/www/osm/slippymap.html`
 </body>
  
 </html>
+EOF
 ```
 
-Change map's start position in hmtl below using the provided script  `center_map.py`
+If needed it is possible to change map's start position in hmtl above using the provided script  `bbox.py` to get the center of your area of interest.
 
-
-then perform: 
+Then download the required images and js files for the map to work:
 
 ```bash
-sudo -s
 cd /var/www/osm
-mkdir -p theme/default
-wget http://www.openstreetmap.org/openlayers/img/blank.gif
-wget http://www.openstreetmap.org/openlayers/img/cloud-popup-relative.png
-wget http://www.openstreetmap.org/openlayers/img/drag-rectangle-off.png
-wget http://www.openstreetmap.org/openlayers/img/drag-rectangle-on.png
-wget http://www.openstreetmap.org/openlayers/img/east-mini.png
-wget http://www.openstreetmap.org/openlayers/img/layer-switcher-maximize.png
-wget http://www.openstreetmap.org/openlayers/img/layer-switcher-minimize.png
-wget http://www.openstreetmap.org/openlayers/img/marker.png
-wget http://www.openstreetmap.org/openlayers/img/marker-blue.png
-wget http://www.openstreetmap.org/openlayers/img/marker-gold.png
-wget http://www.openstreetmap.org/openlayers/img/marker-green.png
-wget http://www.openstreetmap.org/openlayers/img/measuring-stick-off.png
-wget http://www.openstreetmap.org/openlayers/img/measuring-stick-on.png
-wget http://www.openstreetmap.org/openlayers/img/north-mini.png
-wget http://www.openstreetmap.org/openlayers/img/panning-hand-off.png
-wget http://www.openstreetmap.org/openlayers/img/panning-hand-on.png
-wget http://www.openstreetmap.org/openlayers/img/slider.png
-wget http://www.openstreetmap.org/openlayers/img/south-mini.png
-wget http://www.openstreetmap.org/openlayers/img/west-mini.png
-wget http://www.openstreetmap.org/openlayers/img/zoombar.png
-wget http://www.openstreetmap.org/openlayers/img/zoom-minus-mini.png
-wget http://www.openstreetmap.org/openlayers/img/zoom-plus-mini.png
-wget http://www.openstreetmap.org/openlayers/img/zoom-world-mini.png
-wget http://openlayers.org/api/theme/default/style.css
-wget http://www.openlayers.org/api/OpenLayers.js
-wget http://www.openstreetmap.org/openlayers/OpenStreetMap.js
-cp style.css theme/default/
-mkdir img
-mv *.png *.gif img/
+sudo mkdir -p theme/default
+sudo wget http://www.openstreetmap.org/openlayers/img/blank.gif
+sudo wget http://www.openstreetmap.org/openlayers/img/cloud-popup-relative.png
+sudo wget http://www.openstreetmap.org/openlayers/img/drag-rectangle-off.png
+sudo wget http://www.openstreetmap.org/openlayers/img/drag-rectangle-on.png
+sudo wget http://www.openstreetmap.org/openlayers/img/east-mini.png
+sudo wget http://www.openstreetmap.org/openlayers/img/layer-switcher-maximize.png
+sudo wget http://www.openstreetmap.org/openlayers/img/layer-switcher-minimize.png
+sudo wget http://www.openstreetmap.org/openlayers/img/marker.png
+sudo wget http://www.openstreetmap.org/openlayers/img/marker-blue.png
+sudo wget http://www.openstreetmap.org/openlayers/img/marker-gold.png
+sudo wget http://www.openstreetmap.org/openlayers/img/marker-green.png
+sudo wget http://www.openstreetmap.org/openlayers/img/measuring-stick-off.png
+sudo wget http://www.openstreetmap.org/openlayers/img/measuring-stick-on.png
+sudo wget http://www.openstreetmap.org/openlayers/img/north-mini.png
+sudo wget http://www.openstreetmap.org/openlayers/img/panning-hand-off.png
+sudo wget http://www.openstreetmap.org/openlayers/img/panning-hand-on.png
+sudo wget http://www.openstreetmap.org/openlayers/img/slider.png
+sudo wget http://www.openstreetmap.org/openlayers/img/south-mini.png
+sudo wget http://www.openstreetmap.org/openlayers/img/west-mini.png
+sudo wget http://www.openstreetmap.org/openlayers/img/zoombar.png
+sudo wget http://www.openstreetmap.org/openlayers/img/zoom-minus-mini.png
+sudo wget http://www.openstreetmap.org/openlayers/img/zoom-plus-mini.png
+sudo wget http://www.openstreetmap.org/openlayers/img/zoom-world-mini.png
+sudo wget http://openlayers.org/api/theme/default/style.css
+sudo wget http://www.openlayers.org/api/OpenLayers.js
+sudo wget http://www.openstreetmap.org/openlayers/OpenStreetMap.js
+sudo cp style.css theme/default/
+sudo mkdir -p img
+sudo mv *.png *.gif img/
 ```
-
 
 ## Configure renderd 
 
 Create config file `/etc/renderd.conf`:
 
 ```bash
-cat << EOF > /etc/renderd.conf
+cat << EOF | sudo tee /etc/renderd.conf
 ; BASIC AND SIMPLE CONFIGURATION:
 
 [renderd]
@@ -282,8 +285,8 @@ EOF
 
 Create following VirtualHost in apache configuration directory `/etc/apache2/sites-available/001_tile.conf`:
 
-```apache
-cat << EOF > /etc/apache2/sites-available/001_tile.conf
+```bash
+cat << EOF | sudo tee /etc/apache2/sites-available/001_tile.conf
 <VirtualHost *:80>
     ServerAdmin webmaster@localhost
     ServerName localhost
@@ -339,15 +342,13 @@ EOF
 perform:
 
 ```bash
-a2enmod tile
-a2enmod headers
-a2dissite 000-default
-a2ensite 001_tile
-systemctl restart renderd
-systemctl reload apache2
+sudo a2enmod tile
+sudo a2enmod headers
+sudo a2dissite 000-default
+sudo a2ensite 001_tile
+sudo systemctl restart renderd
+sudo systemctl restart apache2
 ```
-
-
 
 ## Speeding up tile rendering
 
@@ -356,7 +357,7 @@ You can speed up the tile rendering by pre-rendering tiles for your area of inte
 Example of Andorra from zoom level 1 to 18:
 
 ```bash
-cd ~/maptile-docs
+cd ~/a-maptiler-docs
 source ./maptile/bin/activate
 python bbox.py AD
 ```
